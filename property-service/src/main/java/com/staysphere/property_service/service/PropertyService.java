@@ -1,10 +1,9 @@
 package com.staysphere.property_service.service;
 
-import com.staysphere.property_service.dto.CreatePropertyRequest;
-import com.staysphere.property_service.dto.PropertyResponse;
-import com.staysphere.property_service.dto.PropertySummaryResponse;
-import com.staysphere.property_service.dto.UpdatePropertyRequest;
+import com.staysphere.property_service.client.SearchServiceClient;
+import com.staysphere.property_service.dto.*;
 import com.staysphere.property_service.entity.Property;
+import com.staysphere.property_service.enums.PropertyStatus;
 import com.staysphere.property_service.exception.PropertyNotFoundException;
 import com.staysphere.property_service.repository.PropertyRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +16,7 @@ import java.util.List;
 public class PropertyService {
 
     private final PropertyRepository propertyRepository;
-
+    private final SearchServiceClient searchServiceClient;
     public PropertyResponse createProperty(CreatePropertyRequest request) {
 
         Property property = Property.builder()
@@ -33,9 +32,9 @@ public class PropertyService {
                 .propertyType(request.getPropertyType())
                 .amenities(request.getAmenities())
                 .build();
-
+        property.setStatus(PropertyStatus.ACTIVE);
         Property savedProperty = propertyRepository.save(property);
-
+        syncToSearch(savedProperty);
         return mapToResponse(savedProperty);
     }
 
@@ -90,7 +89,7 @@ public class PropertyService {
         property.setStatus(request.getStatus());
 
         Property updatedProperty = propertyRepository.save(property);
-
+        syncToSearch(updatedProperty);
         return mapToResponse(updatedProperty);
     }
 
@@ -99,7 +98,11 @@ public class PropertyService {
         Property property = propertyRepository.findById(id)
                 .orElseThrow(() -> new PropertyNotFoundException(id));
 
-        propertyRepository.delete(property);
+        property.setStatus(PropertyStatus.INACTIVE);
+
+        Property updatedProperty = propertyRepository.save(property);
+
+        syncToSearch(updatedProperty);
     }
 
     private PropertyResponse mapToResponse(Property property) {
@@ -135,5 +138,23 @@ public class PropertyService {
                 .propertyType(property.getPropertyType())
                 .status(property.getStatus())
                 .build();
+    }
+    private void syncToSearch(Property property) {
+        SearchPropertySyncRequest request = SearchPropertySyncRequest.builder()
+                .propertyId(property.getId())
+                .title(property.getTitle())
+                .city(property.getCity())
+                .country(property.getCountry())
+                .pricePerNight(property.getPricePerNight())
+                .currency(property.getCurrency())
+                .maxGuests(property.getMaxGuests())
+                .propertyType(property.getPropertyType())
+                .status(property.getStatus())
+                .amenities(property.getAmenities())
+                .createdAt(property.getCreatedAt())
+                .updatedAt(property.getUpdatedAt())
+                .build();
+
+        searchServiceClient.syncProperty(request);
     }
 }
