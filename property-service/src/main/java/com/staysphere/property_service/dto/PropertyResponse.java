@@ -19,9 +19,9 @@ public class PropertyResponse {
     private String city;
     private String country;
     private String address;
-    private double pricePerNight;
+    private Double pricePerNight;
     private String currency;
-    private int maxGuests;
+    private Integer maxGuests;
     private PropertyType propertyType;
     private PropertyStatus status;
     private String amenities;

@@ -12,16 +12,16 @@ import lombok.Setter;
 @Setter
 public class CreateUserRequest {
 
-    @NotBlank
+    @NotBlank(message = "Name is required")
     private String name;
 
-    @Email
-    @NotBlank
+    @NotBlank(message = "Email is required")
+    @Email(message = "Email should be valid")
     private String email;
 
-    @NotBlank
+    @NotBlank(message = "Password is required")
     private String password;
 
-    @NotNull
+    @NotNull(message = "Role is required")
     private Role role;
 }

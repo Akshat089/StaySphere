@@ -30,8 +30,8 @@ public class Property {
     private String country;
     private String address;
     private String currency;
-    private double pricePerNight;
-    private int maxGuests;
+    private Double pricePerNight;
+    private Integer maxGuests;
     @Enumerated(EnumType.STRING)
     private PropertyType propertyType;
 
