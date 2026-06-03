@@ -8,7 +8,9 @@ import com.staysphere.property_service.exception.PropertyNotFoundException;
 import com.staysphere.property_service.repository.PropertyRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -17,8 +19,9 @@ public class PropertyService {
 
     private final PropertyRepository propertyRepository;
     private final SearchServiceClient searchServiceClient;
+    private final RestTemplate restTemplate;
     public PropertyResponse createProperty(CreatePropertyRequest request) {
-
+        validateHostExists(request.getHostId());
         Property property = Property.builder()
                 .hostId(request.getHostId())
                 .title(request.getTitle())
@@ -97,17 +100,43 @@ public class PropertyService {
 
         Property property = propertyRepository.findById(id)
                 .orElseThrow(() -> new PropertyNotFoundException(id));
-
+        validateNoActiveBookings(id);
         property.setStatus(PropertyStatus.INACTIVE);
 
         Property updatedProperty = propertyRepository.save(property);
 
         syncToSearch(updatedProperty);
     }
+    private void validateNoActiveBookings(Long propertyId) {
+        try {
+            BookingClientResponse[] bookings = restTemplate.getForObject(
+                    "http://localhost:8084/api/bookings/property/" + propertyId,
+                    BookingClientResponse[].class
+            );
 
+            if (bookings == null) {
+                return;
+            }
+
+            List<BookingClientResponse> bookingList = Arrays.asList(bookings);
+
+            boolean hasActiveBookings = bookingList.stream()
+                    .anyMatch(booking ->
+                            "CONFIRMED".equals(booking.getStatus()) ||
+                                    "PENDING".equals(booking.getStatus())
+                    );
+
+            if (hasActiveBookings) {
+                throw new RuntimeException("Cannot delete property because active bookings exist");
+            }
+
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to validate property bookings before delete: " + ex.getMessage());
+        }
+    }
     private PropertyResponse mapToResponse(Property property) {
 
-        return PropertyResponse.builder()
+        return PropertyResponse.builder().id(property.getId())
                 .hostId(property.getHostId())
                 .title(property.getTitle())
                 .description(property.getDescription())
@@ -128,6 +157,7 @@ public class PropertyService {
     private PropertySummaryResponse mapToSummary(Property property) {
 
         return PropertySummaryResponse.builder()
+                .id(property.getId())
                 .hostId(property.getHostId())
                 .title(property.getTitle())
                 .city(property.getCity())
@@ -156,5 +186,20 @@ public class PropertyService {
                 .build();
 
         searchServiceClient.syncProperty(request);
+    }
+    private void validateHostExists(Long hostId) {
+        try {
+            UserClientResponse user = restTemplate.getForObject(
+                    "http://localhost:8081/api/users/" + hostId,
+                    UserClientResponse.class
+            );
+
+            if (user == null) {
+                throw new RuntimeException("Host user not found with id: " + hostId);
+            }
+
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to validate host user: " + ex.getMessage());
+        }
     }
 }

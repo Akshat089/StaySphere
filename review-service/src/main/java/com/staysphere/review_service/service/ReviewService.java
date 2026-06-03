@@ -1,14 +1,14 @@
 package com.staysphere.review_service.service;
 
-import com.staysphere.review_service.dto.CreateReviewRequest;
-import com.staysphere.review_service.dto.ReviewResponse;
+import com.staysphere.review_service.dto.*;
+import com.staysphere.review_service.dto.PaymentClientResponse;
 import com.staysphere.review_service.entity.Review;
 import com.staysphere.review_service.exception.DuplicateReviewException;
 import com.staysphere.review_service.exception.ReviewNotFoundException;
 import com.staysphere.review_service.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
+import org.springframework.web.client.RestTemplate;
 import java.util.List;
 
 @Service
@@ -16,9 +16,10 @@ import java.util.List;
 public class ReviewService {
 
     private final ReviewRepository reviewRepository;
-
+    private final RestTemplate restTemplate;
     public ReviewResponse createReview(CreateReviewRequest request) {
-
+        validateBookingForReview(request);
+        validateSuccessfulPayment(request.getBookingId());
         if (reviewRepository.existsByBookingId(request.getBookingId())) {
             throw new DuplicateReviewException("Review already exists for booking id: " + request.getBookingId());
         }
@@ -32,7 +33,7 @@ public class ReviewService {
                 .build();
 
         Review savedReview = reviewRepository.save(review);
-
+        sendReviewCreatedNotification(savedReview);
         return mapToResponse(savedReview);
     }
 
@@ -75,5 +76,69 @@ public class ReviewService {
                 .createdAt(review.getCreatedAt())
                 .updatedAt(review.getUpdatedAt())
                 .build();
+    }
+    private void validateBookingForReview(CreateReviewRequest request) {
+        try {
+            BookingClientResponse booking = restTemplate.getForObject(
+                    "http://localhost:8084/api/bookings/" + request.getBookingId(),
+                    BookingClientResponse.class
+            );
+
+            if (booking == null) {
+                throw new RuntimeException("Booking not found with id: " + request.getBookingId());
+            }
+
+            if (!booking.getGuestId().equals(request.getUserId())) {
+                throw new RuntimeException("Review user does not match booking guest");
+            }
+
+            if (!booking.getPropertyId().equals(request.getPropertyId())) {
+                throw new RuntimeException("Review property does not match booking property");
+            }
+
+            if (!"CONFIRMED".equals(booking.getStatus())) {
+                throw new RuntimeException("Review can only be created for CONFIRMED bookings");
+            }
+
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to validate booking for review: " + ex.getMessage());
+        }
+    }
+    private void validateSuccessfulPayment(Long bookingId) {
+        try {
+            com.staysphere.review_service.dto.PaymentClientResponse payment = restTemplate.getForObject(
+                    "http://localhost:8085/api/payments/booking/" + bookingId,
+                    PaymentClientResponse.class
+            );
+
+            if (payment == null) {
+                throw new RuntimeException("Payment not found for booking id: " + bookingId);
+            }
+
+            if (!"SUCCESS".equals(payment.getPaymentStatus())) {
+                throw new RuntimeException("Review can only be created after successful payment");
+            }
+
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to validate payment for review: " + ex.getMessage());
+        }
+    }
+    private void sendReviewCreatedNotification(Review review) {
+        try {
+            CreateNotificationRequest notification = CreateNotificationRequest.builder()
+                    .userId(review.getUserId())
+                    .type("REVIEW_CREATED")
+                    .message("Your review was created for property id: " + review.getPropertyId())
+                    .build();
+
+            restTemplate.postForObject(
+                    "http://localhost:8087/api/notifications",
+                    notification,
+                    Object.class
+            );
+
+        } catch (Exception ex) {
+            System.out.println("Notification service failed: " + ex.getMessage());
+        }
     }
 }

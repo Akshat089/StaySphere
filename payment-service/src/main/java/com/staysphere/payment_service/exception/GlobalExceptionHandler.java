@@ -42,7 +42,17 @@ public class GlobalExceptionHandler {
                 .validationErrors(errors)
                 .build();
     }
-
+    @ExceptionHandler(RuntimeException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiError handleRuntimeException(RuntimeException ex, HttpServletRequest request) {
+        return ApiError.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+    }
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiError handleGenericException(Exception ex, HttpServletRequest request) {

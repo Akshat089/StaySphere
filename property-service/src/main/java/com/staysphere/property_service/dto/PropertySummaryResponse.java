@@ -10,6 +10,7 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class PropertySummaryResponse {
+    private Long id;
     private Long hostId;
     private String title;
     private String city;

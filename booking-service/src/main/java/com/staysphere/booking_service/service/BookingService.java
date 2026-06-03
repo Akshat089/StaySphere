@@ -1,8 +1,6 @@
 package com.staysphere.booking_service.service;
 
-import com.staysphere.booking_service.dto.BookingResponse;
-import com.staysphere.booking_service.dto.CreateBookingRequest;
-import com.staysphere.booking_service.dto.UpdateBookingRequest;
+import com.staysphere.booking_service.dto.*;
 import com.staysphere.booking_service.entity.Booking;
 import com.staysphere.booking_service.enums.BookingStatus;
 import com.staysphere.booking_service.exception.BookingNotFoundException;
@@ -12,6 +10,7 @@ import com.staysphere.booking_service.repository.BookingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -21,12 +20,12 @@ import java.util.List;
 public class BookingService {
 
     private final BookingRepository bookingRepository;
-
+    private final RestTemplate restTemplate;
     @Transactional
     public BookingResponse createBooking(CreateBookingRequest request) {
-
         validateDates(request.getCheckInDate(), request.getCheckOutDate());
-
+        validateGuestExists(request.getGuestId());
+        validateProperty(request.getPropertyId());
         bookingRepository.lockProperty(request.getPropertyId());
 
         List<BookingStatus> blockingStatuses = List.of(
@@ -56,7 +55,7 @@ public class BookingService {
                 .build();
 
         Booking savedBooking = bookingRepository.save(booking);
-
+        sendBookingCreatedNotification(savedBooking);
         return mapToResponse(savedBooking);
     }
 
@@ -113,6 +112,7 @@ public class BookingService {
                 .status(booking.getStatus())
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
+                .version(booking.getVersion())
                 .build();
     }
     @Transactional
@@ -152,5 +152,58 @@ public class BookingService {
         Booking updatedBooking = bookingRepository.save(booking);
 
         return mapToResponse(updatedBooking);
+    }
+    private void validateProperty(Long propertyId) {
+        try {
+            PropertyClientResponse property = restTemplate.getForObject(
+                    "http://localhost:8082/api/properties/" + propertyId,
+                    PropertyClientResponse.class
+            );
+
+            if (property == null) {
+                throw new RuntimeException("Property not found with id: " + propertyId);
+            }
+
+            if (!"ACTIVE".equals(property.getStatus())) {
+                throw new RuntimeException("Property is not active and cannot be booked");
+            }
+
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to validate property: " + ex.getMessage());
+        }
+    }
+
+    private void sendBookingCreatedNotification(Booking booking) {
+        try {
+            CreateNotificationRequest notification = CreateNotificationRequest.builder()
+                    .userId(booking.getGuestId())
+                    .type("BOOKING_CREATED")
+                    .message("Your booking has been confirmed for property id: " + booking.getPropertyId())
+                    .build();
+
+            restTemplate.postForObject(
+                    "http://localhost:8087/api/notifications",
+                    notification,
+                    Object.class
+            );
+
+        } catch (Exception ex) {
+            System.out.println("Notification service failed: " + ex.getMessage());
+        }
+    }
+    private void validateGuestExists(Long guestId) {
+        try {
+            UserClientResponse user = restTemplate.getForObject(
+                    "http://localhost:8081/api/users/" + guestId,
+                    UserClientResponse.class
+            );
+
+            if (user == null) {
+                throw new RuntimeException("Guest user not found with id: " + guestId);
+            }
+
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to validate guest user: " + ex.getMessage());
+        }
     }
 }

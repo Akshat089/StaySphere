@@ -28,7 +28,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BookingOverlapException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiError handleBookingOverlap(BookingOverlapException ex, HttpServletRequest request) {
-        return ApiError.builder()d
+        return ApiError.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.CONFLICT.value())
                 .error("Booking Conflict")
@@ -36,7 +36,17 @@ public class GlobalExceptionHandler {
                 .path(request.getRequestURI())
                 .build();
     }
-
+    @ExceptionHandler(RuntimeException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiError handleRuntimeException(RuntimeException ex, HttpServletRequest request) {
+        return ApiError.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+    }
     @ExceptionHandler(InvalidBookingDateException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiError handleInvalidDate(InvalidBookingDateException ex, HttpServletRequest request) {

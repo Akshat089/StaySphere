@@ -23,7 +23,17 @@ public class GlobalExceptionHandler {
                 .path(request.getRequestURI())
                 .build();
     }
-
+    @ExceptionHandler(RuntimeException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiError handleRuntimeException(RuntimeException ex, HttpServletRequest request) {
+        return ApiError.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+    }
     @ExceptionHandler(DuplicateReviewException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiError handleDuplicateReview(DuplicateReviewException ex, HttpServletRequest request) {
