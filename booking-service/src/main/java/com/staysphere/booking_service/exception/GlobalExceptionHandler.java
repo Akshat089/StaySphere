@@ -28,7 +28,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BookingOverlapException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiError handleBookingOverlap(BookingOverlapException ex, HttpServletRequest request) {
-        return ApiError.builder()
+        return ApiError.builder()d
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.CONFLICT.value())
                 .error("Booking Conflict")
