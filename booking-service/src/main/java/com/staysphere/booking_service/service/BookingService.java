@@ -8,6 +8,8 @@ import com.staysphere.booking_service.exception.BookingOverlapException;
 import com.staysphere.booking_service.exception.InvalidBookingDateException;
 import com.staysphere.booking_service.repository.BookingRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
@@ -23,9 +25,12 @@ public class BookingService {
     private final RestTemplate restTemplate;
     @Transactional
     public BookingResponse createBooking(CreateBookingRequest request) {
+        Long currentUserId = getCurrentUserId();
+
         validateDates(request.getCheckInDate(), request.getCheckOutDate());
-        validateGuestExists(request.getGuestId());
+        validateGuestExists(currentUserId);
         validateProperty(request.getPropertyId());
+
         bookingRepository.lockProperty(request.getPropertyId());
 
         List<BookingStatus> blockingStatuses = List.of(
@@ -46,7 +51,7 @@ public class BookingService {
 
         Booking booking = Booking.builder()
                 .propertyId(request.getPropertyId())
-                .guestId(request.getGuestId())
+                .guestId(currentUserId)
                 .checkInDate(request.getCheckInDate())
                 .checkOutDate(request.getCheckOutDate())
                 .totalAmount(request.getTotalAmount())
@@ -84,7 +89,9 @@ public class BookingService {
     public void cancelBooking(Long id) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new BookingNotFoundException("Booking not found with id: " + id));
-
+        if (!isAdmin() && !booking.getGuestId().equals(getCurrentUserId())) {
+            throw new RuntimeException("You are not allowed to modify this booking");
+        }
         booking.setStatus(BookingStatus.CANCELLED);
 
         bookingRepository.save(booking);
@@ -122,7 +129,9 @@ public class BookingService {
                 .orElseThrow(() -> new BookingNotFoundException("Booking not found with id: " + id));
 
         validateDates(request.getCheckInDate(), request.getCheckOutDate());
-
+        if (!isAdmin() && !booking.getGuestId().equals(getCurrentUserId())) {
+            throw new RuntimeException("You are not allowed to modify this booking");
+        }
         bookingRepository.lockProperty(booking.getPropertyId());
 
         List<BookingStatus> blockingStatuses = List.of(
@@ -205,5 +214,38 @@ public class BookingService {
         } catch (Exception ex) {
             throw new RuntimeException("Unable to validate guest user: " + ex.getMessage());
         }
+    }
+    private Long getCurrentUserId() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || authentication.getDetails() == null) {
+            throw new RuntimeException("Unauthorized: user details missing");
+        }
+
+        Object details = authentication.getDetails();
+
+        if (details instanceof Long) {
+            return (Long) details;
+        }
+
+        if (details instanceof Integer) {
+            return ((Integer) details).longValue();
+        }
+
+        return Long.parseLong(details.toString());
+    }
+
+    private boolean isAdmin() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            return false;
+        }
+
+        return authentication.getAuthorities()
+                .stream()
+                .anyMatch(auth -> "ROLE_ADMIN".equals(auth.getAuthority()));
     }
 }

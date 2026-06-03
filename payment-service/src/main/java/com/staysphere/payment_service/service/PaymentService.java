@@ -7,6 +7,8 @@ import com.staysphere.payment_service.enums.PaymentStatus;
 import com.staysphere.payment_service.exception.PaymentNotFoundException;
 import com.staysphere.payment_service.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.staysphere.payment_service.dto.BookingClientResponse;
@@ -26,10 +28,12 @@ public class PaymentService {
         if (paymentRepository.existsByBookingId(request.getBookingId())) {
             throw new RuntimeException("Payment already exists for booking id: " + request.getBookingId());
         }
-        BookingClientResponse booking = validateBookingForPayment(request);
+        Long currentUserId = getCurrentUserId();
+
+        BookingClientResponse booking = validateBookingForPayment(request, currentUserId);
         Payment payment = Payment.builder()
                 .bookingId(request.getBookingId())
-                .userId(request.getUserId())
+                .userId(currentUserId)
                 .amount(request.getAmount())
                 .currency(request.getCurrency())
                 .paymentProvider(request.getPaymentProvider())
@@ -49,14 +53,18 @@ public class PaymentService {
     public PaymentResponse getPaymentById(Long id) {
         Payment payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new PaymentNotFoundException("Payment not found with id: " + id));
-
+        if (!isAdmin() && !payment.getUserId().equals(getCurrentUserId())) {
+            throw new RuntimeException("You are not allowed to access this payment");
+        }
         return mapToResponse(payment);
     }
 
     public PaymentResponse getPaymentByBookingId(Long bookingId) {
         Payment payment = paymentRepository.findByBookingId(bookingId)
                 .orElseThrow(() -> new PaymentNotFoundException("Payment not found for booking id: " + bookingId));
-
+        if (!isAdmin() && !payment.getUserId().equals(getCurrentUserId())) {
+            throw new RuntimeException("You are not allowed to access this payment");
+        }
         return mapToResponse(payment);
     }
 
@@ -71,7 +79,9 @@ public class PaymentService {
     public PaymentResponse refundPayment(Long id) {
         Payment payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new PaymentNotFoundException("Payment not found with id: " + id));
-
+        if (!isAdmin() && !payment.getUserId().equals(getCurrentUserId())) {
+            throw new RuntimeException("You are not allowed to access this payment");
+        }
         payment.setPaymentStatus(PaymentStatus.REFUNDED);
 
         Payment refundedPayment = paymentRepository.save(payment);
@@ -93,7 +103,7 @@ public class PaymentService {
                 .updatedAt(payment.getUpdatedAt())
                 .build();
     }
-    private BookingClientResponse validateBookingForPayment(CreatePaymentRequest request) {
+    private BookingClientResponse validateBookingForPayment(CreatePaymentRequest request, Long currentUserId) {
         try {
             BookingClientResponse booking = restTemplate.getForObject(
                     "http://localhost:8084/api/bookings/" + request.getBookingId(),
@@ -104,7 +114,7 @@ public class PaymentService {
                 throw new RuntimeException("Booking not found with id: " + request.getBookingId());
             }
 
-            if (!booking.getGuestId().equals(request.getUserId())) {
+            if (!booking.getGuestId().equals(currentUserId)) {
                 throw new RuntimeException("Payment user does not match booking guest");
             }
 
@@ -144,5 +154,38 @@ public class PaymentService {
         } catch (Exception ex) {
             System.out.println("Notification service failed: " + ex.getMessage());
         }
+    }
+    private Long getCurrentUserId() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || authentication.getDetails() == null) {
+            throw new RuntimeException("Unauthorized: user details missing");
+        }
+
+        Object details = authentication.getDetails();
+
+        if (details instanceof Long) {
+            return (Long) details;
+        }
+
+        if (details instanceof Integer) {
+            return ((Integer) details).longValue();
+        }
+
+        return Long.parseLong(details.toString());
+    }
+
+    private boolean isAdmin() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            return false;
+        }
+
+        return authentication.getAuthorities()
+                .stream()
+                .anyMatch(auth -> "ROLE_ADMIN".equals(auth.getAuthority()));
     }
 }

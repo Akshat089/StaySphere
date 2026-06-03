@@ -7,6 +7,8 @@ import com.staysphere.notification_service.enums.NotificationStatus;
 import com.staysphere.notification_service.exception.NotificationNotFoundException;
 import com.staysphere.notification_service.repository.NotificationRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -80,5 +82,38 @@ public class NotificationService {
                 .createdAt(notification.getCreatedAt())
                 .updatedAt(notification.getUpdatedAt())
                 .build();
+    }
+    private Long getCurrentUserId() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || authentication.getDetails() == null) {
+            throw new RuntimeException("Unauthorized: user details missing");
+        }
+
+        Object details = authentication.getDetails();
+
+        if (details instanceof Long) {
+            return (Long) details;
+        }
+
+        if (details instanceof Integer) {
+            return ((Integer) details).longValue();
+        }
+
+        return Long.parseLong(details.toString());
+    }
+
+    private boolean isAdmin() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            return false;
+        }
+
+        return authentication.getAuthorities()
+                .stream()
+                .anyMatch(auth -> "ROLE_ADMIN".equals(auth.getAuthority()));
     }
 }

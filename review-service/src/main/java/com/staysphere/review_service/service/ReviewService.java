@@ -7,6 +7,8 @@ import com.staysphere.review_service.exception.DuplicateReviewException;
 import com.staysphere.review_service.exception.ReviewNotFoundException;
 import com.staysphere.review_service.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import java.util.List;
@@ -18,7 +20,8 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final RestTemplate restTemplate;
     public ReviewResponse createReview(CreateReviewRequest request) {
-        validateBookingForReview(request);
+        Long currentUserId = getCurrentUserId();
+        validateBookingForReview(request,currentUserId);
         validateSuccessfulPayment(request.getBookingId());
         if (reviewRepository.existsByBookingId(request.getBookingId())) {
             throw new DuplicateReviewException("Review already exists for booking id: " + request.getBookingId());
@@ -26,12 +29,11 @@ public class ReviewService {
 
         Review review = Review.builder()
                 .propertyId(request.getPropertyId())
-                .userId(request.getUserId())
+                .userId(currentUserId)
                 .bookingId(request.getBookingId())
                 .rating(request.getRating())
                 .comment(request.getComment())
                 .build();
-
         Review savedReview = reviewRepository.save(review);
         sendReviewCreatedNotification(savedReview);
         return mapToResponse(savedReview);
@@ -61,7 +63,9 @@ public class ReviewService {
     public void deleteReview(Long id) {
         Review review = reviewRepository.findById(id)
                 .orElseThrow(() -> new ReviewNotFoundException("Review not found with id: " + id));
-
+        if (!isAdmin() && !review.getUserId().equals(getCurrentUserId())) {
+            throw new RuntimeException("You are not allowed to delete this review");
+        }
         reviewRepository.delete(review);
     }
 
@@ -77,7 +81,7 @@ public class ReviewService {
                 .updatedAt(review.getUpdatedAt())
                 .build();
     }
-    private void validateBookingForReview(CreateReviewRequest request) {
+    private void validateBookingForReview(CreateReviewRequest request,Long currentUserId) {
         try {
             BookingClientResponse booking = restTemplate.getForObject(
                     "http://localhost:8084/api/bookings/" + request.getBookingId(),
@@ -88,7 +92,7 @@ public class ReviewService {
                 throw new RuntimeException("Booking not found with id: " + request.getBookingId());
             }
 
-            if (!booking.getGuestId().equals(request.getUserId())) {
+            if (!booking.getGuestId().equals(currentUserId)) {
                 throw new RuntimeException("Review user does not match booking guest");
             }
 
@@ -140,5 +144,38 @@ public class ReviewService {
         } catch (Exception ex) {
             System.out.println("Notification service failed: " + ex.getMessage());
         }
+    }
+    private Long getCurrentUserId() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || authentication.getDetails() == null) {
+            throw new RuntimeException("Unauthorized: user details missing");
+        }
+
+        Object details = authentication.getDetails();
+
+        if (details instanceof Long) {
+            return (Long) details;
+        }
+
+        if (details instanceof Integer) {
+            return ((Integer) details).longValue();
+        }
+
+        return Long.parseLong(details.toString());
+    }
+
+    private boolean isAdmin() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            return false;
+        }
+
+        return authentication.getAuthorities()
+                .stream()
+                .anyMatch(auth -> "ROLE_ADMIN".equals(auth.getAuthority()));
     }
 }

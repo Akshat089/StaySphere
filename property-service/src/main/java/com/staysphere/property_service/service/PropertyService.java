@@ -7,6 +7,8 @@ import com.staysphere.property_service.enums.PropertyStatus;
 import com.staysphere.property_service.exception.PropertyNotFoundException;
 import com.staysphere.property_service.repository.PropertyRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -21,9 +23,10 @@ public class PropertyService {
     private final SearchServiceClient searchServiceClient;
     private final RestTemplate restTemplate;
     public PropertyResponse createProperty(CreatePropertyRequest request) {
-        validateHostExists(request.getHostId());
+        Long currentUserId = getCurrentUserId();
+        validateHostExists(currentUserId);
         Property property = Property.builder()
-                .hostId(request.getHostId())
+                .hostId(currentUserId)
                 .title(request.getTitle())
                 .description(request.getDescription())
                 .city(request.getCity())
@@ -78,7 +81,9 @@ public class PropertyService {
 
         Property property = propertyRepository.findById(id)
                 .orElseThrow(() -> new PropertyNotFoundException(id));
-
+        if (!isAdmin() && !property.getHostId().equals(getCurrentUserId())) {
+            throw new RuntimeException("You are not allowed to modify this property");
+        }
         property.setTitle(request.getTitle());
         property.setDescription(request.getDescription());
         property.setCity(request.getCity());
@@ -90,7 +95,6 @@ public class PropertyService {
         property.setPropertyType(request.getPropertyType());
         property.setAmenities(request.getAmenities());
         property.setStatus(request.getStatus());
-
         Property updatedProperty = propertyRepository.save(property);
         syncToSearch(updatedProperty);
         return mapToResponse(updatedProperty);
@@ -100,6 +104,9 @@ public class PropertyService {
 
         Property property = propertyRepository.findById(id)
                 .orElseThrow(() -> new PropertyNotFoundException(id));
+        if (!isAdmin() && !property.getHostId().equals(getCurrentUserId())) {
+            throw new RuntimeException("You are not allowed to modify this property");
+        }
         validateNoActiveBookings(id);
         property.setStatus(PropertyStatus.INACTIVE);
 
@@ -201,5 +208,36 @@ public class PropertyService {
         } catch (Exception ex) {
             throw new RuntimeException("Unable to validate host user: " + ex.getMessage());
         }
+    }
+    private Long getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || authentication.getDetails() == null) {
+            throw new RuntimeException("Unauthorized: user details missing");
+        }
+
+        Object details = authentication.getDetails();
+
+        if (details instanceof Long) {
+            return (Long) details;
+        }
+
+        if (details instanceof Integer) {
+            return ((Integer) details).longValue();
+        }
+
+        return Long.parseLong(details.toString());
+    }
+
+    private boolean isAdmin() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            return false;
+        }
+
+        return authentication.getAuthorities()
+                .stream()
+                .anyMatch(auth -> "ROLE_ADMIN".equals(auth.getAuthority()));
     }
 }
