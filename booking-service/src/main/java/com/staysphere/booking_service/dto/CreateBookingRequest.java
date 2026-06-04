@@ -16,7 +16,6 @@ public class CreateBookingRequest {
     @NotNull(message = "Property id is required")
     private Long propertyId;
 
-    @NotNull(message = "Guest id is required")
     private Long guestId;
 
     @NotNull(message = "Check-in date is required")

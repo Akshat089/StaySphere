@@ -16,7 +16,6 @@ public class CreatePaymentRequest {
     @NotNull(message = "Booking Id is required")
     private Long bookingId;
 
-    @NotNull(message = "UserId is required")
     private Long userId;
 
     @NotNull(message = "Total amount is required")

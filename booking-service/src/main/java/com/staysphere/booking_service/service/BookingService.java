@@ -8,6 +8,7 @@ import com.staysphere.booking_service.exception.BookingOverlapException;
 import com.staysphere.booking_service.exception.InvalidBookingDateException;
 import com.staysphere.booking_service.repository.BookingRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,12 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final RestTemplate restTemplate;
+    @Value("${PROPERTY_SERVICE_URL:http://localhost:8082}")
+    private String propertyServiceUrl;
+    @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8087}")
+    private String notificationServiceUrl;
+    @Value("${USER_SERVICE_URL:http://localhost:8081}")
+    private String userServiceUrl;
     @Transactional
     public BookingResponse createBooking(CreateBookingRequest request) {
         Long currentUserId = getCurrentUserId();
@@ -165,7 +172,7 @@ public class BookingService {
     private void validateProperty(Long propertyId) {
         try {
             PropertyClientResponse property = restTemplate.getForObject(
-                    "http://localhost:8082/api/properties/" + propertyId,
+                    propertyServiceUrl + "/api/properties/" + propertyId,
                     PropertyClientResponse.class
             );
 
@@ -191,7 +198,7 @@ public class BookingService {
                     .build();
 
             restTemplate.postForObject(
-                    "http://localhost:8087/api/notifications",
+                    notificationServiceUrl + "/api/notifications",
                     notification,
                     Object.class
             );
@@ -203,7 +210,7 @@ public class BookingService {
     private void validateGuestExists(Long guestId) {
         try {
             UserClientResponse user = restTemplate.getForObject(
-                    "http://localhost:8081/api/users/" + guestId,
+                    userServiceUrl + "/api/users/" + guestId,
                     UserClientResponse.class
             );
 

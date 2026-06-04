@@ -7,6 +7,7 @@ import com.staysphere.payment_service.enums.PaymentStatus;
 import com.staysphere.payment_service.exception.PaymentNotFoundException;
 import com.staysphere.payment_service.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,10 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final RestTemplate restTemplate;
+    @Value("${BOOKING_SERVICE_URL:http://localhost:8084}")
+    private String bookingServiceUrl;
+    @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8087}")
+    private String notificationServiceUrl;
     @Transactional
     public PaymentResponse createPayment(CreatePaymentRequest request) {
         if (paymentRepository.existsByBookingId(request.getBookingId())) {
@@ -62,9 +67,7 @@ public class PaymentService {
     public PaymentResponse getPaymentByBookingId(Long bookingId) {
         Payment payment = paymentRepository.findByBookingId(bookingId)
                 .orElseThrow(() -> new PaymentNotFoundException("Payment not found for booking id: " + bookingId));
-        if (!isAdmin() && !payment.getUserId().equals(getCurrentUserId())) {
-            throw new RuntimeException("You are not allowed to access this payment");
-        }
+
         return mapToResponse(payment);
     }
 
@@ -106,7 +109,7 @@ public class PaymentService {
     private BookingClientResponse validateBookingForPayment(CreatePaymentRequest request, Long currentUserId) {
         try {
             BookingClientResponse booking = restTemplate.getForObject(
-                    "http://localhost:8084/api/bookings/" + request.getBookingId(),
+                    bookingServiceUrl + "/api/bookings/" + request.getBookingId(),
                     BookingClientResponse.class
             );
 
@@ -146,7 +149,7 @@ public class PaymentService {
                     .build();
 
             restTemplate.postForObject(
-                    "http://localhost:8087/api/notifications",
+                    notificationServiceUrl + "/api/notifications",
                     notification,
                     Object.class
             );

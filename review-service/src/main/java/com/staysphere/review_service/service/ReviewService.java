@@ -7,6 +7,7 @@ import com.staysphere.review_service.exception.DuplicateReviewException;
 import com.staysphere.review_service.exception.ReviewNotFoundException;
 import com.staysphere.review_service.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,12 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final RestTemplate restTemplate;
+    @Value("${BOOKING_SERVICE_URL:http://localhost:8084}")
+    private String bookingServiceUrl;
+    @Value("${PAYMENT_SERVICE_URL:http://localhost:8085}")
+    private String paymentServiceUrl;
+    @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8087}")
+    private String notificationServiceUrl;
     public ReviewResponse createReview(CreateReviewRequest request) {
         Long currentUserId = getCurrentUserId();
         validateBookingForReview(request,currentUserId);
@@ -84,7 +91,7 @@ public class ReviewService {
     private void validateBookingForReview(CreateReviewRequest request,Long currentUserId) {
         try {
             BookingClientResponse booking = restTemplate.getForObject(
-                    "http://localhost:8084/api/bookings/" + request.getBookingId(),
+                    bookingServiceUrl + "/api/bookings/" + request.getBookingId(),
                     BookingClientResponse.class
             );
 
@@ -111,7 +118,7 @@ public class ReviewService {
     private void validateSuccessfulPayment(Long bookingId) {
         try {
             com.staysphere.review_service.dto.PaymentClientResponse payment = restTemplate.getForObject(
-                    "http://localhost:8085/api/payments/booking/" + bookingId,
+                    paymentServiceUrl + "/api/payments/booking/" + bookingId,
                     PaymentClientResponse.class
             );
 
@@ -136,7 +143,7 @@ public class ReviewService {
                     .build();
 
             restTemplate.postForObject(
-                    "http://localhost:8087/api/notifications",
+                    notificationServiceUrl + "/api/notifications",
                     notification,
                     Object.class
             );

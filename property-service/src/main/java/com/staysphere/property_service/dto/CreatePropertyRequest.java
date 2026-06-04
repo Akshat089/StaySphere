@@ -13,7 +13,6 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class CreatePropertyRequest{
-    @NotNull(message = "Host ID is required")
     private Long hostId;
 
     @NotBlank(message = "Title is required")

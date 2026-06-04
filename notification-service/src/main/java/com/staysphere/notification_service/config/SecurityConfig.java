@@ -24,9 +24,10 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/reviews").hasRole("GUEST")
-                        .requestMatchers(HttpMethod.DELETE, "/api/reviews/**").hasAnyRole("GUEST", "ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/reviews/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/notifications").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/notifications/user/**").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/api/notifications/**").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/notifications/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(

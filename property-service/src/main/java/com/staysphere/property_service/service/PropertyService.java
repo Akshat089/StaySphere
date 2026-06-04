@@ -7,6 +7,7 @@ import com.staysphere.property_service.enums.PropertyStatus;
 import com.staysphere.property_service.exception.PropertyNotFoundException;
 import com.staysphere.property_service.repository.PropertyRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,10 @@ public class PropertyService {
     private final PropertyRepository propertyRepository;
     private final SearchServiceClient searchServiceClient;
     private final RestTemplate restTemplate;
+    @Value("${BOOKING_SERVICE_URL:http://localhost:8084}")
+    private String bookingServiceUrl;
+    @Value("${USER_SERVICE_URL:http://localhost:8081}")
+    private String userServiceUrl;
     public PropertyResponse createProperty(CreatePropertyRequest request) {
         Long currentUserId = getCurrentUserId();
         validateHostExists(currentUserId);
@@ -117,7 +122,7 @@ public class PropertyService {
     private void validateNoActiveBookings(Long propertyId) {
         try {
             BookingClientResponse[] bookings = restTemplate.getForObject(
-                    "http://localhost:8084/api/bookings/property/" + propertyId,
+                    bookingServiceUrl + "/api/bookings/property/" + propertyId,
                     BookingClientResponse[].class
             );
 
@@ -197,7 +202,7 @@ public class PropertyService {
     private void validateHostExists(Long hostId) {
         try {
             UserClientResponse user = restTemplate.getForObject(
-                    "http://localhost:8081/api/users/" + hostId,
+                    userServiceUrl + "/api/users/" + hostId,
                     UserClientResponse.class
             );
 

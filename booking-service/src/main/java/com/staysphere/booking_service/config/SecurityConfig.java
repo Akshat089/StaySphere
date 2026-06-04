@@ -27,7 +27,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/bookings").hasRole("GUEST")
                         .requestMatchers(HttpMethod.PUT, "/api/bookings/**").hasAnyRole("GUEST", "ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/bookings/**").hasAnyRole("GUEST", "ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/bookings/**").authenticated()
+
+                        .requestMatchers(HttpMethod.GET, "/api/bookings/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
+
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(
