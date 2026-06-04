@@ -29,7 +29,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/bookings/**").hasAnyRole("GUEST", "ADMIN")
 
                         .requestMatchers(HttpMethod.GET, "/api/bookings/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
+                        .requestMatchers("/actuator/**").permitAll()
 
                         .anyRequest().authenticated()
                 )

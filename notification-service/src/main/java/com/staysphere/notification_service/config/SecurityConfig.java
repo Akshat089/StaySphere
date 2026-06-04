@@ -28,6 +28,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/notifications/user/**").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/api/notifications/**").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/notifications/**").hasRole("ADMIN")
+                        .requestMatchers("/actuator/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(

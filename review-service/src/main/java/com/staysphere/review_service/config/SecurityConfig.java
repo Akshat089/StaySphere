@@ -27,6 +27,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/reviews").hasRole("GUEST")
                         .requestMatchers(HttpMethod.DELETE, "/api/reviews/**").hasAnyRole("GUEST", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/reviews/**").permitAll()
+                        .requestMatchers("/actuator/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(

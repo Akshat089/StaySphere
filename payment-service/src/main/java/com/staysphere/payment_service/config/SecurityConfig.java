@@ -27,6 +27,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/payments").hasRole("GUEST")
                         .requestMatchers(HttpMethod.PATCH, "/api/payments/**").hasAnyRole("GUEST", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/payments/**").permitAll()
+                        .requestMatchers("/actuator/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(

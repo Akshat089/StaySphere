@@ -23,6 +23,40 @@ services:
       - "6379:6379"
     networks:
       - staysphere-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: staysphere_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    depends_on:
+      - api-gateway
+      - user-service
+      - property-service
+      - search-service
+      - booking-service
+      - payment-service
+      - review-service
+      - notification-service
+    networks:
+      - staysphere-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: staysphere_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      - prometheus
+    networks:
+      - staysphere-network
   kafka:
     image: apache/kafka:latest
     container_name: staysphere_kafka
