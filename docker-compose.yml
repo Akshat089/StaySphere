@@ -13,10 +13,174 @@ services:
     volumes:
       - postgres_data_new:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d
+    networks:
+      - staysphere-network
+
   redis:
     image: redis:7
     container_name: staysphere_redis
     ports:
       - "6379:6379"
+    networks:
+      - staysphere-network
+
+  user-service:
+    build: ./user-service
+    container_name: user-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/user_db
+      SPRING_DATASOURCE_USERNAME: staysphere
+      SPRING_DATASOURCE_PASSWORD: staysphere
+      JWT_SECRET: ThisIsAReallyLongSecretKeyForStaySphereJwtAuth123456789
+      JWT_EXPIRATION_MS: 86400000
+    depends_on:
+      - postgres
+    networks:
+      - staysphere-network
+
+  property-service:
+    build: ./property-service
+    container_name: property-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/property_db
+      SPRING_DATASOURCE_USERNAME: staysphere
+      SPRING_DATASOURCE_PASSWORD: staysphere
+      JWT_SECRET: ThisIsAReallyLongSecretKeyForStaySphereJwtAuth123456789
+      USER_SERVICE_URL: http://user-service:8081
+      BOOKING_SERVICE_URL: http://booking-service:8084
+      SEARCH_SERVICE_URL: http://search-service:8083
+    depends_on:
+      - postgres
+      - user-service
+      - search-service
+    networks:
+      - staysphere-network
+
+  search-service:
+    build: ./search-service
+    container_name: search-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/search_db
+      SPRING_DATASOURCE_USERNAME: staysphere
+      SPRING_DATASOURCE_PASSWORD: staysphere
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      JWT_SECRET: ThisIsAReallyLongSecretKeyForStaySphereJwtAuth123456789
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - staysphere-network
+
+  booking-service:
+    build: ./booking-service
+    container_name: booking-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booking_db
+      SPRING_DATASOURCE_USERNAME: staysphere
+      SPRING_DATASOURCE_PASSWORD: staysphere
+      JWT_SECRET: ThisIsAReallyLongSecretKeyForStaySphereJwtAuth123456789
+      USER_SERVICE_URL: http://user-service:8081
+      PROPERTY_SERVICE_URL: http://property-service:8082
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
+    depends_on:
+      - postgres
+      - user-service
+      - property-service
+      - notification-service
+    networks:
+      - staysphere-network
+
+  payment-service:
+    build: ./payment-service
+    container_name: payment-service
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payment_db
+      SPRING_DATASOURCE_USERNAME: staysphere
+      SPRING_DATASOURCE_PASSWORD: staysphere
+      JWT_SECRET: ThisIsAReallyLongSecretKeyForStaySphereJwtAuth123456789
+      BOOKING_SERVICE_URL: http://booking-service:8084
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
+    depends_on:
+      - postgres
+      - booking-service
+      - notification-service
+    networks:
+      - staysphere-network
+
+  review-service:
+    build: ./review-service
+    container_name: review-service
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/review_db
+      SPRING_DATASOURCE_USERNAME: staysphere
+      SPRING_DATASOURCE_PASSWORD: staysphere
+      JWT_SECRET: ThisIsAReallyLongSecretKeyForStaySphereJwtAuth123456789
+      BOOKING_SERVICE_URL: http://booking-service:8084
+      PAYMENT_SERVICE_URL: http://payment-service:8085
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
+    depends_on:
+      - postgres
+      - booking-service
+      - payment-service
+      - notification-service
+    networks:
+      - staysphere-network
+
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    ports:
+      - "8087:8087"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification_db
+      SPRING_DATASOURCE_USERNAME: staysphere
+      SPRING_DATASOURCE_PASSWORD: staysphere
+      JWT_SECRET: ThisIsAReallyLongSecretKeyForStaySphereJwtAuth123456789
+    depends_on:
+      - postgres
+    networks:
+      - staysphere-network
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8088:8088"
+    environment:
+      USER_SERVICE_URL: http://user-service:8081
+      PROPERTY_SERVICE_URL: http://property-service:8082
+      SEARCH_SERVICE_URL: http://search-service:8083
+      BOOKING_SERVICE_URL: http://booking-service:8084
+      PAYMENT_SERVICE_URL: http://payment-service:8085
+      REVIEW_SERVICE_URL: http://review-service:8086
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
+    depends_on:
+      - user-service
+      - property-service
+      - search-service
+      - booking-service
+      - payment-service
+      - review-service
+      - notification-service
+    networks:
+      - staysphere-network
+
 volumes:
   postgres_data_new:
+
+networks:
+  staysphere-network:
+    driver: bridge
