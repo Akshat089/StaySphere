@@ -3,6 +3,7 @@ package com.staysphere.review_service.service;
 import com.staysphere.review_service.dto.*;
 import com.staysphere.review_service.dto.PaymentClientResponse;
 import com.staysphere.review_service.entity.Review;
+import com.staysphere.review_service.event.ReviewEventProducer;
 import com.staysphere.review_service.exception.DuplicateReviewException;
 import com.staysphere.review_service.exception.ReviewNotFoundException;
 import com.staysphere.review_service.repository.ReviewRepository;
@@ -20,6 +21,7 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final RestTemplate restTemplate;
+    private final ReviewEventProducer reviewEventProducer;
     @Value("${BOOKING_SERVICE_URL:http://localhost:8084}")
     private String bookingServiceUrl;
     @Value("${PAYMENT_SERVICE_URL:http://localhost:8085}")
@@ -42,7 +44,7 @@ public class ReviewService {
                 .comment(request.getComment())
                 .build();
         Review savedReview = reviewRepository.save(review);
-        sendReviewCreatedNotification(savedReview);
+        reviewEventProducer.publishReviewCreated(savedReview);
         return mapToResponse(savedReview);
     }
 
@@ -134,24 +136,24 @@ public class ReviewService {
             throw new RuntimeException("Unable to validate payment for review: " + ex.getMessage());
         }
     }
-    private void sendReviewCreatedNotification(Review review) {
-        try {
-            CreateNotificationRequest notification = CreateNotificationRequest.builder()
-                    .userId(review.getUserId())
-                    .type("REVIEW_CREATED")
-                    .message("Your review was created for property id: " + review.getPropertyId())
-                    .build();
-
-            restTemplate.postForObject(
-                    notificationServiceUrl + "/api/notifications",
-                    notification,
-                    Object.class
-            );
-
-        } catch (Exception ex) {
-            System.out.println("Notification service failed: " + ex.getMessage());
-        }
-    }
+//    private void sendReviewCreatedNotification(Review review) {
+//        try {
+//            CreateNotificationRequest notification = CreateNotificationRequest.builder()
+//                    .userId(review.getUserId())
+//                    .type("REVIEW_CREATED")
+//                    .message("Your review was created for property id: " + review.getPropertyId())
+//                    .build();
+//
+//            restTemplate.postForObject(
+//                    notificationServiceUrl + "/api/notifications",
+//                    notification,
+//                    Object.class
+//            );
+//
+//        } catch (Exception ex) {
+//            System.out.println("Notification service failed: " + ex.getMessage());
+//        }
+//    }
     private Long getCurrentUserId() {
         Authentication authentication =
                 SecurityContextHolder.getContext().getAuthentication();

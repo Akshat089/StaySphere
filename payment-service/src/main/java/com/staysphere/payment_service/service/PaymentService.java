@@ -4,6 +4,7 @@ import com.staysphere.payment_service.dto.CreatePaymentRequest;
 import com.staysphere.payment_service.dto.PaymentResponse;
 import com.staysphere.payment_service.entity.Payment;
 import com.staysphere.payment_service.enums.PaymentStatus;
+import com.staysphere.payment_service.event.PaymentEventProducer;
 import com.staysphere.payment_service.exception.PaymentNotFoundException;
 import com.staysphere.payment_service.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final RestTemplate restTemplate;
+    private final PaymentEventProducer paymentEventProducer;
     @Value("${BOOKING_SERVICE_URL:http://localhost:8084}")
     private String bookingServiceUrl;
     @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8087}")
@@ -51,7 +53,7 @@ public class PaymentService {
         savedPayment.setPaymentStatus(PaymentStatus.SUCCESS);
 
         Payment completedPayment = paymentRepository.save(savedPayment);
-        sendPaymentSuccessNotification(completedPayment);
+        paymentEventProducer.publishPaymentSuccess(completedPayment);
         return mapToResponse(completedPayment);
     }
 
@@ -140,24 +142,24 @@ public class PaymentService {
         }
     }
 
-    private void sendPaymentSuccessNotification(Payment payment) {
-        try {
-            CreateNotificationRequest notification = CreateNotificationRequest.builder()
-                    .userId(payment.getUserId())
-                    .type("PAYMENT_SUCCESS")
-                    .message("Your payment was successful for booking id: " + payment.getBookingId())
-                    .build();
-
-            restTemplate.postForObject(
-                    notificationServiceUrl + "/api/notifications",
-                    notification,
-                    Object.class
-            );
-
-        } catch (Exception ex) {
-            System.out.println("Notification service failed: " + ex.getMessage());
-        }
-    }
+//    private void sendPaymentSuccessNotification(Payment payment) {
+//        try {
+//            CreateNotificationRequest notification = CreateNotificationRequest.builder()
+//                    .userId(payment.getUserId())
+//                    .type("PAYMENT_SUCCESS")
+//                    .message("Your payment was successful for booking id: " + payment.getBookingId())
+//                    .build();
+//
+//            restTemplate.postForObject(
+//                    notificationServiceUrl + "/api/notifications",
+//                    notification,
+//                    Object.class
+//            );
+//
+//        } catch (Exception ex) {
+//            System.out.println("Notification service failed: " + ex.getMessage());
+//        }
+//    }
     private Long getCurrentUserId() {
         Authentication authentication =
                 SecurityContextHolder.getContext().getAuthentication();

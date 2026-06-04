@@ -119,6 +119,7 @@ services:
       - user-service
       - property-service
       - notification-service
+      - kafka
     networks:
       - staysphere-network
 
@@ -134,6 +135,7 @@ services:
       JWT_SECRET: ThisIsAReallyLongSecretKeyForStaySphereJwtAuth123456789
       BOOKING_SERVICE_URL: http://booking-service:8084
       NOTIFICATION_SERVICE_URL: http://notification-service:8087
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       - postgres
       - booking-service
@@ -155,11 +157,13 @@ services:
       BOOKING_SERVICE_URL: http://booking-service:8084
       PAYMENT_SERVICE_URL: http://payment-service:8085
       NOTIFICATION_SERVICE_URL: http://notification-service:8087
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       - postgres
       - booking-service
       - payment-service
       - notification-service
+      - kafka
     networks:
       - staysphere-network
 
