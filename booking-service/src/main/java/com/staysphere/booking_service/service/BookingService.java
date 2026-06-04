@@ -3,6 +3,7 @@ package com.staysphere.booking_service.service;
 import com.staysphere.booking_service.dto.*;
 import com.staysphere.booking_service.entity.Booking;
 import com.staysphere.booking_service.enums.BookingStatus;
+import com.staysphere.booking_service.event.BookingEventProducer;
 import com.staysphere.booking_service.exception.BookingNotFoundException;
 import com.staysphere.booking_service.exception.BookingOverlapException;
 import com.staysphere.booking_service.exception.InvalidBookingDateException;
@@ -24,10 +25,11 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final RestTemplate restTemplate;
+    private final BookingEventProducer bookingEventProducer;
     @Value("${PROPERTY_SERVICE_URL:http://localhost:8082}")
     private String propertyServiceUrl;
-    @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8087}")
-    private String notificationServiceUrl;
+//    @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8087}")
+//    private String notificationServiceUrl;
     @Value("${USER_SERVICE_URL:http://localhost:8081}")
     private String userServiceUrl;
     @Transactional
@@ -67,7 +69,7 @@ public class BookingService {
                 .build();
 
         Booking savedBooking = bookingRepository.save(booking);
-        sendBookingCreatedNotification(savedBooking);
+        bookingEventProducer.publishBookingCreated(savedBooking);
         return mapToResponse(savedBooking);
     }
 
@@ -189,24 +191,24 @@ public class BookingService {
         }
     }
 
-    private void sendBookingCreatedNotification(Booking booking) {
-        try {
-            CreateNotificationRequest notification = CreateNotificationRequest.builder()
-                    .userId(booking.getGuestId())
-                    .type("BOOKING_CREATED")
-                    .message("Your booking has been confirmed for property id: " + booking.getPropertyId())
-                    .build();
-
-            restTemplate.postForObject(
-                    notificationServiceUrl + "/api/notifications",
-                    notification,
-                    Object.class
-            );
-
-        } catch (Exception ex) {
-            System.out.println("Notification service failed: " + ex.getMessage());
-        }
-    }
+//    private void sendBookingCreatedNotification(Booking booking) {
+//        try {
+//            CreateNotificationRequest notification = CreateNotificationRequest.builder()
+//                    .userId(booking.getGuestId())
+//                    .type("BOOKING_CREATED")
+//                    .message("Your booking has been confirmed for property id: " + booking.getPropertyId())
+//                    .build();
+//
+//            restTemplate.postForObject(
+//                    notificationServiceUrl + "/api/notifications",
+//                    notification,
+//                    Object.class
+//            );
+//
+//        } catch (Exception ex) {
+//            System.out.println("Notification service failed: " + ex.getMessage());
+//        }
+//    }
     private void validateGuestExists(Long guestId) {
         try {
             UserClientResponse user = restTemplate.getForObject(
