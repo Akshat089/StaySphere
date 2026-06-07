@@ -1,26 +1,31 @@
-# StaySphere — Airbnb-Style Microservices Backend
+# StaySphere - Airbnb-Style Microservices Backend
 
-StaySphere is a backend-only Airbnb-style vacation rental platform built using Spring Boot microservices. It supports users, properties, search, bookings, payments, reviews, notifications, Redis caching, API Gateway routing, inter-service validation, and separate database ownership per service.
+StaySphere is a backend-only vacation rental platform built with Spring Boot microservices. It covers user management, JWT-based authentication, property publishing, property search with Redis caching, booking and payment workflows, reviews, notifications, Kafka event flow, API Gateway routing, and service-level observability.
 
-This is the **V1 non-advanced implementation**. Advanced production features such as JWT/RBAC, Kafka, Docker Compose, concurrency benchmark, observability, and resilience patterns are planned as future improvements.
+The repository is organized as a set of independently deployable services, each with its own database and API boundary.
 
 ---
 
 ## Tech Stack
 
-* Java
-* Spring Boot
-* Spring Web
-* Spring Data JPA
-* PostgreSQL
-* Redis
-* Spring Cloud Gateway MVC
-* Maven
-* Postman
+- Java 17
+- Spring Boot
+- Spring Web
+- Spring Security
+- Spring Data JPA
+- Spring Cloud Gateway MVC
+- Spring Kafka
+- Spring Data Redis
+- PostgreSQL
+- Redis
+- Prometheus
+- Grafana
+- Maven
+- Docker and Docker Compose
 
 ---
 
-## Architecture Overview
+## System Overview
 
 ```text
 Client / Postman
@@ -29,51 +34,71 @@ Client / Postman
 API Gateway :8088
       |
       +-------------------- user-service :8081 -------- user_db
+      |                             |
+      |                             +---- /api/auth/login
       |
       +---------------- property-service :8082 -------- property_db
       |                         |
-      |                         v
-      |                 search-service :8083 -------- search_db
-      |                         |
-      |                         v
-      |                       Redis
+      |                         +---- validates host via user-service
+      |                         +---- syncs searchable data to search-service
+      |                         +---- blocks deletion when active bookings exist
       |
-      +---------------- booking-service :8084 -------- booking_db
+      +---------------- search-service :8083 ---------- search_db + Redis
       |                         |
-      |                         v
-      |               notification-service :8087 ----- notification_db
+      |                         +---- read model for property search
       |
-      +---------------- payment-service :8085 -------- payment_db
+      +---------------- booking-service :8084 --------- booking_db
       |                         |
-      |                         v
-      |               notification-service :8087
+      |                         +---- validates users and properties
+      |                         +---- publishes booking-events to Kafka
       |
-      +---------------- review-service :8086 --------- review_db
+      +---------------- payment-service :8085 --------- payment_db
+      |                         |
+      |                         +---- validates bookings
+      |                         +---- publishes payment-events to Kafka
+      |
+      +---------------- review-service :8086 ---------- review_db
+      |                         |
+      |                         +---- validates bookings and payments
+      |                         +---- publishes review-events to Kafka
+      |
+      +---------------- notification-service :8087 ---- notification_db
                                 |
-                                v
-                      notification-service :8087
+                                +---- consumes Kafka events and stores notifications
+
+Supporting infrastructure:
+- PostgreSQL :5434
+- Redis :6379
+- Kafka :9092
+- Prometheus :9090
+- Grafana :3000
 ```
 
 ---
 
 ## Service Ports
 
-| Service              | Port |
-| -------------------- | ---: |
-| API Gateway          | 8088 |
-| User Service         | 8081 |
-| Property Service     | 8082 |
-| Search Service       | 8083 |
-| Booking Service      | 8084 |
-| Payment Service      | 8085 |
-| Review Service       | 8086 |
+| Service | Port |
+| --- | ---: |
+| API Gateway | 8088 |
+| User Service | 8081 |
+| Property Service | 8082 |
+| Search Service | 8083 |
+| Booking Service | 8084 |
+| Payment Service | 8085 |
+| Review Service | 8086 |
 | Notification Service | 8087 |
+| PostgreSQL | 5434 |
+| Redis | 6379 |
+| Kafka | 9092 |
+| Prometheus | 9090 |
+| Grafana | 3000 |
 
 ---
 
-## Database Strategy
+## Architecture Principles
 
-Each service owns its own database. No service directly reads or writes another service's database.
+Each service owns its data and business logic.
 
 ```text
 user-service          -> user_db
@@ -85,27 +110,19 @@ review-service        -> review_db
 notification-service  -> notification_db
 ```
 
-PostgreSQL runs in Docker:
+Shared behavior across services:
 
-```text
-Container: staysphere_postgres_new
-Host Port: 5434
-Username: staysphere
-Password: staysphere
-```
-
-Redis runs in Docker:
-
-```text
-Container: staysphere_redis
-Host Port: 6379
-```
+- Stateless JWT authentication
+- Service-specific Spring Security rules
+- REST-based service-to-service validation
+- Kafka events for downstream notifications
+- Actuator endpoints for health and metrics
 
 ---
 
-## Microservice Design Pattern
+## Repository Structure
 
-Each service follows the same layered structure:
+Most services follow the same layered layout:
 
 ```text
 controller
@@ -116,48 +133,124 @@ dto
 enums
 exception
 config
+security
+event
+client
 ```
 
 Responsibilities:
 
-| Layer      | Responsibility                                |
-| ---------- | --------------------------------------------- |
-| Controller | Exposes REST APIs                             |
-| Service    | Business logic and inter-service calls        |
-| Repository | Database access                               |
-| Entity     | Database model                                |
-| DTO        | Request/response objects                      |
-| Enums      | Status/type values                            |
-| Exception  | Global API error handling                     |
-| Config     | RestTemplate, Redis, or service configuration |
+| Layer | Responsibility |
+| --- | --- |
+| Controller | Exposes REST APIs |
+| Service | Business logic and cross-service orchestration |
+| Repository | Database access |
+| Entity | Persistent model |
+| DTO | Request and response payloads |
+| Enums | Status and type values |
+| Exception | Global error handling |
+| Config | Security, Kafka, Redis, Jackson, REST client setup |
+| Security | JWT validation and request filtering |
+| Event | Kafka payloads and producers/consumers |
+| Client | Outbound service integrations |
 
 ---
 
 ## API Gateway Routes
 
-All APIs can be accessed through the gateway on port `8088`.
+All public APIs are exposed through the gateway on port `8088`.
 
 ```properties
-/api/users/**          -> user-service
-/api/properties/**     -> property-service
-/api/search/**         -> search-service
-/api/bookings/**       -> booking-service
-/api/payments/**       -> payment-service
-/api/reviews/**        -> review-service
-/api/notifications/**  -> notification-service
+/api/users/**           -> user-service
+/api/auth/**            -> user-service
+/api/properties/**      -> property-service
+/api/search/**          -> search-service
+/api/bookings/**        -> booking-service
+/api/payments/**        -> payment-service
+/api/reviews/**         -> review-service
+/api/notifications/**   -> notification-service
+```
+
+Gateway health/demo endpoint:
+
+```http
+GET /hello
 ```
 
 ---
 
-## Implemented Services
+## Authentication and Roles
+
+Authentication is handled by the user service.
+
+Login endpoint:
+
+```http
+POST /api/auth/login
+```
+
+JWT claims include:
+
+- user id
+- email
+- role
+
+Roles used across the platform:
+
+- `GUEST`
+- `HOST`
+- `ADMIN`
+
+Current access rules:
+
+- User registration and login are public
+- Property creation requires `HOST`
+- Booking creation requires `GUEST`
+- Payment creation requires `GUEST`
+- Review creation requires `GUEST`
+- Notification deletion requires `ADMIN`
+- Most read endpoints are public, while write operations are role-protected
 
 ---
 
-# 1. User Service
+## Data and Infrastructure
 
-Manages platform users.
+### PostgreSQL
 
-## Entity
+The repo uses one database per service. Local startup is handled by Docker Compose and the initialization script in `postgres-init/01-create-databases.sql`.
+
+### Redis
+
+Search results are cached in Redis with a 5 minute TTL.
+
+### Kafka
+
+Kafka is used for asynchronous notification workflows.
+
+Topics used by the codebase:
+
+- `booking-events`
+- `payment-events`
+- `review-events`
+
+### Observability
+
+Every service exposes Actuator endpoints:
+
+- `/actuator/health`
+- `/actuator/info`
+- `/actuator/prometheus`
+- `/actuator/metrics`
+
+Prometheus scrapes all services, and Grafana can be pointed at Prometheus for dashboards.
+
+---
+
+## 1. User Service
+
+Manages platform users and issues JWTs.
+
+### Entity
 
 ```text
 User
@@ -170,7 +263,7 @@ createdAt
 updatedAt
 ```
 
-## Roles
+### Roles
 
 ```text
 GUEST
@@ -178,37 +271,42 @@ HOST
 ADMIN
 ```
 
-## Endpoints
+### Endpoints
 
-| Method | Endpoint          | Description    |
-| ------ | ----------------- | -------------- |
-| POST   | `/api/users`      | Create user    |
-| GET    | `/api/users`      | Get all users  |
-| GET    | `/api/users/{id}` | Get user by id |
-| DELETE | `/api/users/{id}` | Delete user    |
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| POST | `/api/users` | Create user |
+| GET | `/api/users` | Get all users |
+| GET | `/api/users/{id}` | Get user by id |
+| DELETE | `/api/users/{id}` | Delete user |
+| POST | `/api/auth/login` | Authenticate and return JWT |
 
-## Example Create User
+### Notes
+
+- Passwords are encoded with BCrypt
+- `POST /api/users` and `POST /api/auth/login` are public
+- The service exposes Actuator metrics for monitoring
+
+### Example Login
 
 ```http
-POST http://localhost:8088/api/users
+POST http://localhost:8088/api/auth/login
 ```
 
 ```json
 {
-  "name": "Emma Carter",
   "email": "emma.carter@example.com",
-  "password": "password123",
-  "role": "GUEST"
+  "password": "password123"
 }
 ```
 
 ---
 
-# 2. Property Service
+## 2. Property Service
 
-Manages rental properties.
+Manages rental properties and keeps the search index in sync.
 
-## Entity
+### Entity
 
 ```text
 Property
@@ -229,7 +327,7 @@ createdAt
 updatedAt
 ```
 
-## Property Types
+### Property Types
 
 ```text
 APARTMENT
@@ -247,7 +345,7 @@ BOAT
 CAMPING_SITE
 ```
 
-## Property Status
+### Property Status
 
 ```text
 PENDING
@@ -256,33 +354,28 @@ INACTIVE
 SUSPENDED
 ```
 
-## Endpoints
+### Endpoints
 
-| Method | Endpoint                        | Description            |
-| ------ | ------------------------------- | ---------------------- |
-| POST   | `/api/properties`               | Create property        |
-| GET    | `/api/properties`               | Get all properties     |
-| GET    | `/api/properties/{id}`          | Get property by id     |
-| GET    | `/api/properties/host/{hostId}` | Get properties by host |
-| GET    | `/api/properties/city/{city}`   | Get properties by city |
-| PUT    | `/api/properties/{id}`          | Update property        |
-| DELETE | `/api/properties/{id}`          | Delete property        |
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| GET | `/api/properties/hello` | Health/demo endpoint |
+| POST | `/api/properties` | Create property |
+| GET | `/api/properties/{id}` | Get property by id |
+| GET | `/api/properties` | Get all properties |
+| GET | `/api/properties/host/{hostId}` | Get properties by host |
+| GET | `/api/properties/city/{city}` | Get properties by city |
+| PUT | `/api/properties/{id}` | Update property |
+| DELETE | `/api/properties/{id}` | Delete property |
 
-## Inter-Service Rules
+### Business Rules
 
-Property Service calls User Service to validate:
+- `hostId` is validated against user-service
+- create and update operations sync searchable data to search-service
+- property deletion is blocked when active bookings exist
+- active bookings are treated as `PENDING` or `CONFIRMED`
+- delete and update operations are role-protected
 
-```text
-hostId must exist
-```
-
-Property deletion is blocked if the property has active bookings:
-
-```text
-PENDING or CONFIRMED bookings prevent deletion
-```
-
-## Example Create Property
+### Example Create Property
 
 ```http
 POST http://localhost:8088/api/properties
@@ -307,28 +400,11 @@ POST http://localhost:8088/api/properties
 
 ---
 
-# 3. Search Service
+## 3. Search Service
 
-Provides fast property search using a separate searchable read model.
+Provides a read-optimized property search API backed by PostgreSQL and Redis.
 
-## Architecture
-
-```text
-property-service
-      |
-      v
-search-service
-      |
-      v
-search_db
-      |
-      v
-Redis cache
-```
-
-Property Service remains the source of truth. Search Service keeps a denormalized copy of searchable property data.
-
-## Entity
+### Entity
 
 ```text
 SearchProperty
@@ -347,7 +423,7 @@ createdAt
 updatedAt
 ```
 
-## Search Filters
+### Search Filters
 
 ```text
 city
@@ -358,24 +434,20 @@ minPrice
 maxPrice
 ```
 
-## Redis Caching
+### Redis Cache
 
-Search results are cached in Redis.
+- Search results are cached in Redis
+- Cache TTL is 5 minutes
+- Cache is cleared when properties are synced
 
-```text
-TTL = 5 minutes
-```
+### Endpoints
 
-Cache is cleared whenever property data syncs into Search Service.
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| POST | `/api/search/properties/sync` | Sync property into search database |
+| GET | `/api/search/properties` | Search properties |
 
-## Endpoints
-
-| Method | Endpoint                      | Description                        |
-| ------ | ----------------------------- | ---------------------------------- |
-| POST   | `/api/search/properties/sync` | Sync property into search database |
-| GET    | `/api/search/properties`      | Search properties                  |
-
-## Example Search
+### Example Searches
 
 ```http
 GET http://localhost:8088/api/search/properties?city=Interlaken
@@ -391,11 +463,11 @@ GET http://localhost:8088/api/search/properties?propertyType=CABIN&maxGuests=4
 
 ---
 
-# 4. Booking Service
+## 4. Booking Service
 
 Handles reservations and prevents double booking.
 
-## Entity
+### Entity
 
 ```text
 Booking
@@ -412,7 +484,7 @@ updatedAt
 version
 ```
 
-## Booking Status
+### Booking Status
 
 ```text
 PENDING
@@ -421,38 +493,24 @@ CANCELLED
 EXPIRED
 ```
 
-## Endpoints
+### Endpoints
 
-| Method | Endpoint                              | Description              |
-| ------ | ------------------------------------- | ------------------------ |
-| POST   | `/api/bookings`                       | Create booking           |
-| GET    | `/api/bookings/{id}`                  | Get booking by id        |
-| GET    | `/api/bookings/guest/{guestId}`       | Get bookings by guest    |
-| GET    | `/api/bookings/property/{propertyId}` | Get bookings by property |
-| PUT    | `/api/bookings/{id}`                  | Update booking           |
-| DELETE | `/api/bookings/{id}`                  | Cancel booking           |
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| POST | `/api/bookings` | Create booking |
+| GET | `/api/bookings/{id}` | Get booking by id |
+| GET | `/api/bookings/guest/{guestId}` | Get bookings by guest |
+| GET | `/api/bookings/property/{propertyId}` | Get bookings by property |
+| PUT | `/api/bookings/{id}` | Update booking |
+| DELETE | `/api/bookings/{id}` | Cancel booking |
 
-## Inter-Service Rules
+### Business Rules
 
-Booking Service validates:
-
-```text
-guestId exists in user-service
-propertyId exists in property-service
-property status is ACTIVE
-```
-
-After successful booking:
-
-```text
-booking-service creates BOOKING_CREATED notification
-```
-
-## Double Booking Protection
-
-Booking Service prevents overlapping bookings using:
-
-### Date overlap check
+- guest id is validated against user-service
+- property id is validated against property-service
+- property must be `ACTIVE`
+- overlapping bookings are rejected
+- booking overlap logic uses:
 
 ```text
 existingCheckIn < requestedCheckOut
@@ -460,19 +518,11 @@ AND
 existingCheckOut > requestedCheckIn
 ```
 
-### PostgreSQL advisory lock
+- PostgreSQL advisory locking is used with `pg_advisory_xact_lock(propertyId)`
+- optimistic locking is enabled with `@Version`
+- booking creation publishes a Kafka booking event
 
-```sql
-pg_advisory_xact_lock(propertyId)
-```
-
-### Optimistic locking
-
-```java
-@Version
-```
-
-## Example Create Booking
+### Example Create Booking
 
 ```http
 POST http://localhost:8088/api/bookings
@@ -491,11 +541,11 @@ POST http://localhost:8088/api/bookings
 
 ---
 
-# 5. Payment Service
+## 5. Payment Service
 
-Handles mock payment flow.
+Handles mock and external-style payment flows.
 
-## Entity
+### Entity
 
 ```text
 Payment
@@ -511,7 +561,7 @@ createdAt
 updatedAt
 ```
 
-## Payment Status
+### Payment Status
 
 ```text
 PENDING
@@ -520,7 +570,7 @@ FAILED
 REFUNDED
 ```
 
-## Payment Provider
+### Payment Provider
 
 ```text
 MOCK
@@ -528,41 +578,27 @@ STRIPE
 RAZORPAY
 ```
 
-## Endpoints
+### Endpoints
 
-| Method | Endpoint                            | Description            |
-| ------ | ----------------------------------- | ---------------------- |
-| POST   | `/api/payments`                     | Create payment         |
-| GET    | `/api/payments/{id}`                | Get payment by id      |
-| GET    | `/api/payments/booking/{bookingId}` | Get payment by booking |
-| GET    | `/api/payments/user/{userId}`       | Get payments by user   |
-| PATCH  | `/api/payments/{id}/refund`         | Refund payment         |
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| POST | `/api/payments` | Create payment |
+| GET | `/api/payments/{id}` | Get payment by id |
+| GET | `/api/payments/booking/{bookingId}` | Get payment by booking |
+| GET | `/api/payments/user/{userId}` | Get payments by user |
+| PATCH | `/api/payments/{id}/refund` | Refund payment |
 
-## Inter-Service Rules
+### Business Rules
 
-Payment Service validates booking by calling Booking Service:
+- booking is validated against booking-service
+- booking must belong to the same user
+- booking must be `CONFIRMED`
+- amount must match booking total
+- currency must match booking currency
+- only one payment is allowed per booking
+- successful payments publish a Kafka payment event
 
-```text
-booking exists
-booking belongs to same user
-booking status is CONFIRMED
-payment amount matches booking totalAmount
-payment currency matches booking currency
-```
-
-Payment Service also prevents duplicate payments:
-
-```text
-only one payment per booking
-```
-
-After successful payment:
-
-```text
-payment-service creates PAYMENT_SUCCESS notification
-```
-
-## Example Create Payment
+### Example Create Payment
 
 ```http
 POST http://localhost:8088/api/payments
@@ -580,11 +616,11 @@ POST http://localhost:8088/api/payments
 
 ---
 
-# 6. Review Service
+## 6. Review Service
 
-Handles property reviews.
+Handles property reviews after a valid booking and successful payment.
 
-## Entity
+### Entity
 
 ```text
 Review
@@ -598,47 +634,29 @@ createdAt
 updatedAt
 ```
 
-## Endpoints
+### Endpoints
 
-| Method | Endpoint                             | Description             |
-| ------ | ------------------------------------ | ----------------------- |
-| POST   | `/api/reviews`                       | Create review           |
-| GET    | `/api/reviews/{id}`                  | Get review by id        |
-| GET    | `/api/reviews/property/{propertyId}` | Get reviews by property |
-| GET    | `/api/reviews/user/{userId}`         | Get reviews by user     |
-| DELETE | `/api/reviews/{id}`                  | Delete review           |
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| POST | `/api/reviews` | Create review |
+| GET | `/api/reviews/{id}` | Get review by id |
+| GET | `/api/reviews/property/{propertyId}` | Get reviews by property |
+| GET | `/api/reviews/user/{userId}` | Get reviews by user |
+| DELETE | `/api/reviews/{id}` | Delete review |
 
-## Inter-Service Rules
+### Business Rules
 
-Review Service validates booking by calling Booking Service:
+- booking is validated against booking-service
+- booking must belong to the same user
+- booking must belong to the same property
+- booking must be `CONFIRMED`
+- payment is validated against payment-service
+- payment must exist for the booking
+- payment must be `SUCCESS`
+- only one review is allowed per booking
+- successful reviews publish a Kafka review event
 
-```text
-booking exists
-booking belongs to same user
-booking belongs to same property
-booking status is CONFIRMED
-```
-
-Review Service validates payment by calling Payment Service:
-
-```text
-payment exists for booking
-payment status is SUCCESS
-```
-
-Review Service also prevents duplicate reviews:
-
-```text
-only one review per booking
-```
-
-After successful review:
-
-```text
-review-service creates REVIEW_CREATED notification
-```
-
-## Example Create Review
+### Example Create Review
 
 ```http
 POST http://localhost:8088/api/reviews
@@ -656,11 +674,11 @@ POST http://localhost:8088/api/reviews
 
 ---
 
-# 7. Notification Service
+## 7. Notification Service
 
-Stores user notifications.
+Stores and manages user notifications.
 
-## Entity
+### Entity
 
 ```text
 Notification
@@ -673,7 +691,7 @@ createdAt
 updatedAt
 ```
 
-## Notification Type
+### Notification Type
 
 ```text
 BOOKING_CREATED
@@ -684,7 +702,7 @@ REVIEW_CREATED
 GENERAL
 ```
 
-## Notification Status
+### Notification Status
 
 ```text
 PENDING
@@ -693,18 +711,28 @@ FAILED
 READ
 ```
 
-## Endpoints
+### Endpoints
 
-| Method | Endpoint                                  | Description               |
-| ------ | ----------------------------------------- | ------------------------- |
-| POST   | `/api/notifications`                      | Create notification       |
-| GET    | `/api/notifications/{id}`                 | Get notification by id    |
-| GET    | `/api/notifications/user/{userId}`        | Get notifications by user |
-| GET    | `/api/notifications/user/{userId}/unread` | Get unread notifications  |
-| PATCH  | `/api/notifications/{id}/read`            | Mark notification as read |
-| DELETE | `/api/notifications/{id}`                 | Delete notification       |
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| POST | `/api/notifications` | Create notification |
+| GET | `/api/notifications/{id}` | Get notification by id |
+| GET | `/api/notifications/user/{userId}` | Get notifications by user |
+| GET | `/api/notifications/user/{userId}/unread` | Get unread notifications |
+| PATCH | `/api/notifications/{id}/read` | Mark notification as read |
+| DELETE | `/api/notifications/{id}` | Delete notification |
 
-## Example Get User Notifications
+### Event Consumption
+
+Notification service consumes:
+
+- `BookingCreatedEvent`
+- `PaymentSuccessEvent`
+- `ReviewCreatedEvent`
+
+Those events are turned into stored notifications with matching types.
+
+### Example Get Notifications
 
 ```http
 GET http://localhost:8088/api/notifications/user/4
@@ -714,23 +742,26 @@ GET http://localhost:8088/api/notifications/user/4
 
 ## End-to-End Workflow
 
-The full V1 platform workflow is:
+Typical platform flow:
 
 ```text
 1. Create host user
 2. Create guest user
 3. Host creates property
 4. Property syncs to search-service
-5. Guest searches property
+5. Guest searches properties
 6. Guest creates booking
 7. Booking validates user and property
-8. Booking sends notification
-9. Guest creates payment
-10. Payment validates booking
-11. Payment sends notification
-12. Guest creates review
-13. Review validates booking and payment
-14. Review sends notification
+8. Booking publishes booking event
+9. Notification service stores booking notification
+10. Guest creates payment
+11. Payment validates booking
+12. Payment publishes payment event
+13. Notification service stores payment notification
+14. Guest creates review
+15. Review validates booking and payment
+16. Review publishes review event
+17. Notification service stores review notification
 ```
 
 ---
@@ -767,300 +798,132 @@ POST /api/users
 }
 ```
 
-### 3. Create Property
+### 3. Login Guest
 
 ```http
-POST /api/properties
+POST /api/auth/login
 ```
 
 ```json
 {
-  "hostId": 5,
-  "title": "Modern Lakefront Cabin",
-  "description": "A peaceful lakefront cabin with a private deck, fireplace, fast Wi-Fi, and mountain views.",
-  "city": "Interlaken",
-  "country": "Switzerland",
-  "address": "24 Lakeview Road, Interlaken",
-  "pricePerNight": 180,
-  "currency": "CHF",
-  "maxGuests": 4,
-  "propertyType": "CABIN",
-  "status": "ACTIVE",
-  "amenities": "Wi-Fi, Fireplace, Lake View, Kitchen, Free Parking"
+  "email": "emma.carter@example.com",
+  "password": "password123"
 }
 ```
 
-### 4. Search Property
+### 4. Use JWT on protected requests
 
 ```http
-GET /api/search/properties?city=Interlaken
-```
-
-### 5. Create Booking
-
-```http
-POST /api/bookings
-```
-
-```json
-{
-  "propertyId": 9,
-  "guestId": 4,
-  "checkInDate": "2026-12-10",
-  "checkOutDate": "2026-12-15",
-  "totalAmount": 900,
-  "currency": "CHF"
-}
-```
-
-### 6. Create Payment
-
-```http
-POST /api/payments
-```
-
-```json
-{
-  "bookingId": 6,
-  "userId": 4,
-  "amount": 900,
-  "currency": "CHF",
-  "paymentProvider": "MOCK"
-}
-```
-
-### 7. Create Review
-
-```http
-POST /api/reviews
-```
-
-```json
-{
-  "propertyId": 9,
-  "userId": 4,
-  "bookingId": 6,
-  "rating": 5,
-  "comment": "Beautiful lakefront cabin with a peaceful view and smooth booking experience."
-}
-```
-
-### 8. Check Notifications
-
-```http
-GET /api/notifications/user/4
-```
-
-Expected notification types:
-
-```text
-BOOKING_CREATED
-PAYMENT_SUCCESS
-REVIEW_CREATED
+Authorization: Bearer <token>
 ```
 
 ---
 
-## Business Rules Implemented
+## Monitoring
 
-### Property Rules
+Prometheus is configured in `monitoring/prometheus/prometheus.yml` to scrape:
 
-* Property must belong to an existing user.
-* Property creation triggers sync to Search Service.
-* Property deletion is blocked if active bookings exist.
+- api-gateway
+- user-service
+- property-service
+- search-service
+- booking-service
+- payment-service
+- review-service
+- notification-service
 
-### Search Rules
-
-* Search Service stores a denormalized property model.
-* Search only returns searchable property data.
-* Redis caches repeated search queries.
-* Cache is invalidated when property data changes.
-
-### Booking Rules
-
-* Guest must exist.
-* Property must exist.
-* Property must be ACTIVE.
-* Dates must be valid.
-* Overlapping bookings are rejected.
-* Booking cancellation changes status to CANCELLED.
-* Booking creation triggers notification.
-
-### Payment Rules
-
-* Booking must exist.
-* Payment user must match booking guest.
-* Booking must be CONFIRMED.
-* Amount must match booking total.
-* Currency must match booking currency.
-* Only one payment is allowed per booking.
-* Successful payment triggers notification.
-
-### Review Rules
-
-* Booking must exist.
-* Review user must match booking guest.
-* Review property must match booking property.
-* Booking must be CONFIRMED.
-* Payment must exist and be SUCCESS.
-* Only one review is allowed per booking.
-* Review creation triggers notification.
-
-### Notification Rules
-
-* Notifications are created for booking, payment, and review events.
-* Notifications can be marked as READ.
-* Notifications can be fetched by user.
+Grafana runs alongside Prometheus in Docker Compose and can be used for dashboards and service visibility.
 
 ---
 
-## Error Handling
+## Benchmark
 
-All services use structured API errors.
+The repo includes a concurrency benchmark in `benchmarks/booking_currency_tests.py`.
 
-Example:
+What it does:
 
-```json
-{
-  "timestamp": "2026-06-03T13:26:00.8845299",
-  "status": 400,
-  "error": "Bad Request",
-  "message": "Payment already exists for booking id: 6",
-  "path": "/api/payments",
-  "validationErrors": null
-}
-```
+- logs in a guest user
+- sends 50 concurrent booking requests for the same property and date range
+- expects exactly 1 success and the rest to fail safely
 
-Validation errors return field-level messages using `validationErrors`.
+This script is useful for validating overlap protection and race-condition handling in the booking flow.
 
 ---
 
-## Redis Validation
+## Local Setup
 
-Redis search cache was tested by:
+### Prerequisites
 
-```text
-1. Searching a property
-2. Confirming Redis key creation
-3. Checking TTL
-4. Repeating the same query
-5. Confirming cached response
-6. Stopping PostgreSQL
-7. Confirming cached search still returns
+- Java 17
+- Maven
+- Docker and Docker Compose
+
+### Run Everything with Docker
+
+```bash
+docker compose up --build
 ```
 
-Example Redis key:
+This starts:
+
+- PostgreSQL
+- Redis
+- Kafka
+- Prometheus
+- Grafana
+- all eight Spring Boot services
+
+### Default Local Ports
+
+- API Gateway: `8088`
+- User Service: `8081`
+- Property Service: `8082`
+- Search Service: `8083`
+- Booking Service: `8084`
+- Payment Service: `8085`
+- Review Service: `8086`
+- Notification Service: `8087`
+
+### Common Environment Variables
 
 ```text
-search:properties:city=Interlaken:country=null:type=null:maxGuests=null:minPrice=null:maxPrice=null
+SPRING_DATASOURCE_URL
+SPRING_DATASOURCE_USERNAME
+SPRING_DATASOURCE_PASSWORD
+JWT_SECRET
+JWT_EXPIRATION_MS
+USER_SERVICE_URL
+PROPERTY_SERVICE_URL
+SEARCH_SERVICE_URL
+BOOKING_SERVICE_URL
+PAYMENT_SERVICE_URL
+REVIEW_SERVICE_URL
+NOTIFICATION_SERVICE_URL
+KAFKA_BOOTSTRAP_SERVERS
+SPRING_DATA_REDIS_HOST
+SPRING_DATA_REDIS_PORT
 ```
 
 ---
 
-## Postman Collection
+## Notes
 
-The project includes a Postman collection covering:
-
-```text
-User APIs
-Property APIs
-Search APIs
-Booking APIs
-Payment APIs
-Review APIs
-Notification APIs
-End-to-End Flow
-Negative Test Cases
-```
-
-Tested flows include:
-
-```text
-property sync
-search cache
-booking validation
-overlap rejection
-payment validation
-duplicate payment rejection
-review payment validation
-duplicate review rejection
-notification generation
-gateway routing
-```
+- The project is backend-only. There is no frontend in this repository.
+- Search is backed by a separate read model, not direct queries against the property database.
+- All services expose Actuator endpoints for monitoring.
+- The gateway routes all external traffic through a single entry point.
 
 ---
 
-## Current V1 Status
+## API Reference Summary
 
-Completed:
+| Service | Key Public APIs |
+| --- | --- |
+| User | `/api/users`, `/api/auth/login` |
+| Property | `/api/properties`, `/api/properties/host/{hostId}`, `/api/properties/city/{city}` |
+| Search | `/api/search/properties`, `/api/search/properties/sync` |
+| Booking | `/api/bookings`, `/api/bookings/guest/{guestId}`, `/api/bookings/property/{propertyId}` |
+| Payment | `/api/payments`, `/api/payments/booking/{bookingId}`, `/api/payments/user/{userId}` |
+| Review | `/api/reviews`, `/api/reviews/property/{propertyId}`, `/api/reviews/user/{userId}` |
+| Notification | `/api/notifications`, `/api/notifications/user/{userId}` |
 
-```text
-API Gateway
-User Service
-Property Service
-Search Service
-Booking Service
-Payment Service
-Review Service
-Notification Service
-PostgreSQL per service
-Redis caching
-Property-to-search sync
-Inter-service validations
-Notification workflows
-Booking overlap prevention
-Payment and review business rules
-Postman tested APIs
-```
-
----
-
-## Known Limitations
-
-The current version intentionally keeps some production-grade features out of scope.
-
-```text
-No JWT authentication yet
-No role-based authorization yet
-No Kafka/event bus yet
-No Docker Compose for all services yet
-No distributed tracing yet
-No centralized logging yet
-No circuit breakers/retries yet
-No real payment gateway integration yet
-No Elasticsearch yet
-No concurrency benchmark report yet
-```
-
----
-
-## Future Improvements
-
-Planned advanced improvements:
-
-```text
-JWT Authentication
-Role-Based Access Control
-Docker Compose for full platform startup
-Kafka-based event-driven architecture
-Booking concurrency benchmark
-OpenTelemetry + Zipkin tracing
-Resilience4j circuit breakers and retries
-Elasticsearch for advanced search
-Stripe/Razorpay integration
-CI/CD pipeline
-Centralized logging
-Service discovery
-```
-
----
-
-## Resume Summary
-
-StaySphere is a distributed Airbnb-style backend platform built with Spring Boot microservices, PostgreSQL, Redis, and API Gateway. It implements independent database ownership, service-to-service validation, denormalized search with caching, booking overlap prevention, mock payment workflows, reviews, notifications, and structured API error handling.
-
-Resume bullet example:
-
-```text
-Built StaySphere, an Airbnb-style Spring Boot microservices backend with 7 independent services, API Gateway routing, PostgreSQL-per-service architecture, Redis-backed property search, inter-service validation, booking overlap prevention, mock payment workflows, reviews, and notification pipelines.
-```
